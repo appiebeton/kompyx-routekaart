@@ -26,7 +26,7 @@ log() { echo "[$(date -u +%H:%M:%S)] $*" >&2; }
 if [ ! -x venv/bin/valhalla_build_tiles ]; then
   log "venv + pyvalhalla $VALHALLA_VERSION"
   python3 -m venv venv
-  venv/bin/pip install -q "pyvalhalla==$VALHALLA_VERSION" "osmium==$OSMIUM_VERSION"
+  venv/bin/pip install -q "pyvalhalla==$VALHALLA_VERSION" "osmium==$OSMIUM_VERSION" "shapely==2.1.1" "pyproj==3.7.1"
 fi
 export PATH="$WORK/venv/bin:$PATH"
 
