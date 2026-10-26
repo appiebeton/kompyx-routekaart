@@ -67,7 +67,7 @@ jobs:
             --notes "Vrachtwagenroutes NL. © OpenStreetMap-bijdragers (ODbL), NDW open data. Valhalla 3.9.1." \
             manifest.json nl-truck-tiles.tar.gz restrictions.json SHA256SUMS
 
-      - name: Oude releases opruimen (laatste 7 houden: een download die een paar dagen gepauzeerd staat blijft geldig)
+      - name: 'Oude releases opruimen (laatste 7 houden, zodat een gepauzeerde download geldig blijft)'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
