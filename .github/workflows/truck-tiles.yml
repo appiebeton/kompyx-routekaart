@@ -1,0 +1,76 @@
+# Dagelijkse (nachtelijke) bouw van de Nederlandse vrachtwagen-routekaart (Valhalla 3.9.1-tegels + restrictions.json) voor KOMPYX.
+# Publiceert een GitHub Release 'nl-JJJJ-MM-DD' met manifest.json, nl-truck-tiles.tar.gz, restrictions.json en SHA256SUMS.
+# De app leest:  https://github.com/<eigenaar>/<repo>/releases/latest/download/manifest.json
+# (zet die URL in constants/truck.ts → TRUCK_PACK_URL of in de app onder Routekaart NL).
+# Vereist alleen het ingebouwde GITHUB_TOKEN (contents: write). Geen andere secrets.
+# Publieke repo: Actions-minuten en release-downloads zijn gratis. Bestanden per stuk < 2 GB (nu ~350 MB).
+name: truck-tiles-nl
+
+on:
+  schedule:
+    # Elke nacht 01:00 UTC = 03:00 Amsterdam in de zomer (CEST), 02:00 in de winter (CET).
+    # GitHub-cron kent alleen UTC (geen zomertijd); de bouw duurt < 1 uur, dus de kaart staat in beide gevallen
+    # klaar vóór de ochtend. GitHub kan een geplande run bij drukte 5-30 min later starten.
+    # Geofabrik ververst netherlands-latest dagelijks rond 20-21 UTC, NDW-borden ook dagelijks.
+    - cron: '0 1 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: truck-tiles-nl
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Systeempakketten (tijdzone-database)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends spatialite-bin libsqlite3-mod-spatialite unzip
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Tag bepalen
+        id: tag
+        run: echo "tag=nl-$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Tegels bouwen
+        env:
+          WORK: ${{ runner.temp }}/truck-build
+          OUT: ${{ runner.temp }}/truck-out
+          # Bestanden vast aan deze release, zodat een volgende release een lopende download niet verandert.
+          FILE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}/
+        run: bash scripts/truck/build-nl-tiles.sh
+
+      - name: Controle
+        working-directory: ${{ runner.temp }}/truck-out
+        run: |
+          sha256sum -c SHA256SUMS
+          python3 -c "import json; m=json.load(open('manifest.json')); assert m['format']==1 and m['files']; print(m['version'], m['osmTimestamp'])"
+
+      - name: Release publiceren
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        working-directory: ${{ runner.temp }}/truck-out
+        run: |
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --latest \
+            --title "Routekaart NL $TAG" \
+            --notes "Vrachtwagenroutes NL. © OpenStreetMap-bijdragers (ODbL), NDW open data. Valhalla 3.9.1." \
+            manifest.json nl-truck-tiles.tar.gz restrictions.json SHA256SUMS
+
+      - name: Oude releases opruimen (laatste 7 houden: een download die een paar dagen gepauzeerd staat blijft geldig)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' \
+            | grep '^nl-' | sort -r | tail -n +8 \
+            | xargs -r -I{} gh release delete {} --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
